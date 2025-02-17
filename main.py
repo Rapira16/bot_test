@@ -1,7 +1,8 @@
 import telebot
 import sqlite3
 from datetime import datetime
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, \
+    ReplyKeyboardRemove
 
 # Инициализация бота
 bot = telebot.TeleBot("8094395413:AAGlIanHK3Ji99-N90Nkinvqk4ikRJlkeQg")
@@ -77,6 +78,15 @@ def get_stats(user_id):
     return stats
 
 
+# Создание меню
+def create_menu():
+    menu = ReplyKeyboardMarkup(resize_keyboard=True)
+    menu.add(KeyboardButton("Добавить привычку ➕"))
+    menu.add(KeyboardButton("Отметить выполнение ✅"))
+    menu.add(KeyboardButton("Статистика 📊"))
+    return menu
+
+
 # Команда /start
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -85,17 +95,28 @@ def start(message):
     bot.send_message(
         message.chat.id,
         f"Привет {user.first_name}! Я бот для трекинга привычек.\n\n"
-        "Доступные команды:\n"
-        "/add_habit - добавить привычку\n"
-        "/track_habit - отметить выполнение\n"
-        "/stats - статистика"
+        "Используй кнопки ниже, чтобы управлять своими привычками:",
+        reply_markup=create_menu()
     )
 
 
-# Команда /add_habit
+# Обработка текстовых сообщений
+@bot.message_handler(func=lambda message: True)
+def handle_text(message):
+    if message.text == "Добавить привычку ➕":
+        add_habit_start(message)
+    elif message.text == "Отметить выполнение ✅":
+        track_habit(message)
+    elif message.text == "Статистика 📊":
+        show_stats(message)
+    else:
+        bot.send_message(message.chat.id, "Используй кнопки ниже ⬇️", reply_markup=create_menu())
+
+
+# Добавление привычки
 @bot.message_handler(commands=['add_habit'])
 def add_habit_start(message):
-    msg = bot.send_message(message.chat.id, "Введите название привычки:")
+    msg = bot.send_message(message.chat.id, "Введите название привычки:", reply_markup=ReplyKeyboardRemove())
     bot.register_next_step_handler(msg, add_habit_end)
 
 
@@ -104,25 +125,27 @@ def add_habit_end(message):
     habit_name = message.text
 
     if add_habit(user_id, habit_name):
-        bot.send_message(message.chat.id, f"Привычка '{habit_name}' добавлена!")
+        bot.send_message(message.chat.id, f"Привычка '{habit_name}' добавлена!", reply_markup=create_menu())
     else:
-        bot.send_message(message.chat.id, f"Привычка '{habit_name}' уже существует!")
+        bot.send_message(message.chat.id, f"Привычка '{habit_name}' уже существует!", reply_markup=create_menu())
 
 
-# Команда /track_habit
+# Отметить выполнение
 @bot.message_handler(commands=['track_habit'])
+# В функции track_habit
 def track_habit(message):
     user_id = message.from_user.id
     habits = get_user_habits(user_id)
 
     if not habits:
-        bot.send_message(message.chat.id, "У вас нет добавленных привычек.")
+        bot.send_message(message.chat.id, "У вас нет добавленных привычек.", reply_markup=create_menu())
         return
 
-    # Создаем inline-кнопки с названиями привычек
     keyboard = InlineKeyboardMarkup()
     for habit in habits:
-        keyboard.add(InlineKeyboardButton(habit[1], callback_data=f"track_{habit[0]}"))
+        # Проверяем, что habit_name является строкой
+        habit_name = str(habit[1])  # Приводим к строке на случай, если это не так
+        keyboard.add(InlineKeyboardButton(habit_name, callback_data=f"track_{habit[0]}"))
 
     bot.send_message(message.chat.id, "Выберите привычку для отметки:", reply_markup=keyboard)
 
@@ -146,22 +169,23 @@ def track_habit_complete(call):
         message_id=call.message.message_id,
         text=f"Привычка '{habit_name}' отмечена! ✅"
     )
+    bot.send_message(call.message.chat.id, "Что дальше?", reply_markup=create_menu())
 
 
-# Команда /stats
+# Показать статистику
 @bot.message_handler(commands=['stats'])
 def show_stats(message):
     user_id = message.from_user.id
     stats = get_stats(user_id)
 
     if not stats:
-        bot.send_message(message.chat.id, "Статистика пуста.")
+        bot.send_message(message.chat.id, "Статистика пуста.", reply_markup=create_menu())
         return
 
     message_text = "📊 Ваша статистика:\n\n" + "\n".join(
         [f"{habit[0]}: {habit[1]} раз" for habit in stats]
     )
-    bot.send_message(message.chat.id, message_text)
+    bot.send_message(message.chat.id, message_text, reply_markup=create_menu())
 
 
 # Запуск бота
